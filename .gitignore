@@ -3,3 +3,6 @@ log
 ckpts-huge
 *__pycache__*
 *.pyc
+*.pth
+*.txt
+*.pytorch

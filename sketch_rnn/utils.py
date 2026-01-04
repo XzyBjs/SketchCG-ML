@@ -205,6 +205,7 @@ class DataLoader(object):
                scale_factor=1.0,
                random_scale_factor=0.0,
                augment_stroke_prob=0.0,
+               labels=None,
                limit=1000):
     self.batch_size = batch_size  # minibatch size
     self.max_seq_length = max_seq_length  # N_max in sketch-rnn paper
@@ -217,32 +218,45 @@ class DataLoader(object):
     self.start_stroke_token = [0, 0, 1, 0, 0]  # S_0 in sketch-rnn paper
     # sets self.strokes (list of ndarrays, one per sketch, in stroke-3 format,
     # sorted by size)
-    self.preprocess(strokes)
+    self.preprocess(strokes, labels)
 
-  def preprocess(self, strokes):
-    """Remove entries from strokes having > max_seq_length points."""
+  def preprocess(self, strokes, labels=None):
     raw_data = []
+    raw_labels = []
     seq_len = []
-    count_data = 0
 
+    # 1. 过滤超长序列
     for i in range(len(strokes)):
-      data = strokes[i]
-      if len(data) <= (self.max_seq_length):
-        count_data += 1
-        # removes large gaps from the data
-        data = np.minimum(data, self.limit)
-        data = np.maximum(data, -self.limit)
-        data = np.array(data, dtype=np.float32)
-        data[:, 0:2] /= self.scale_factor
-        raw_data.append(data)
-        seq_len.append(len(data))
-    seq_len = np.array(seq_len)  # nstrokes for each sketch
+        data = strokes[i]
+        if len(data) <= self.max_seq_length:
+          # count_data += 1
+          # removes large gaps from the data
+          data = np.minimum(data, self.limit)
+          data = np.maximum(data, -self.limit)
+          data = np.array(data, dtype=np.float32)
+          data[:, 0:2] /= self.scale_factor
+          raw_data.append(data)
+          seq_len.append(len(data))
+          if labels is not None:
+              raw_labels.append(labels[i])
+
+    seq_len = np.array(seq_len)
+
+    # 2. 按长度排序（关键）
     idx = np.argsort(seq_len)
+
+    # 3. 排序后的数据
     self.strokes = []
-    for i in range(len(seq_len)):
-      self.strokes.append(raw_data[idx[i]])
-    print("total images <= max_seq_len is %d" % count_data)
-    self.num_batches = int(count_data / self.batch_size)
+    self.labels_sorted = [] if labels is not None else None
+
+    for k in idx:
+        self.strokes.append(raw_data[k])
+        if labels is not None:
+            self.labels_sorted.append(int(raw_labels[k]))
+
+    print("total images <= max_seq_len is %d" % len(self.strokes))
+    self.num_batches = len(self.strokes) // self.batch_size
+
 
   def random_sample(self):
     """Return a random sample, in stroke-3 format as used by draw_strokes."""
@@ -284,8 +298,12 @@ class DataLoader(object):
     """Given a list of indices, return the potentially augmented batch."""
     x_batch = []
     seq_len = []
+    labels_batch = []
+    # print('labels_sorted', self.labels_sorted)
     for idx in range(len(indices)):
       i = indices[idx]
+      if self.labels_sorted is not None:
+        labels_batch.append(self.labels_sorted[i])
       data = self.random_scale(self.strokes[i])
       data_copy = np.copy(data)
       if self.augment_stroke_prob > 0:
@@ -294,8 +312,9 @@ class DataLoader(object):
       length = len(data_copy)
       seq_len.append(length)
     seq_len = np.array(seq_len, dtype=int)
+    labels_batch = np.array(labels_batch, dtype=np.int32)
     # We return three things: stroke-3 format, stroke-5 format, list of seq_len.
-    return x_batch, self.pad_batch(x_batch, self.max_seq_length), seq_len
+    return x_batch, self.pad_batch(x_batch, self.max_seq_length), seq_len, labels_batch
 
   def random_batch(self):
     """Return a randomised portion of the training data."""

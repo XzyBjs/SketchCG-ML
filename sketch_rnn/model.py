@@ -16,8 +16,8 @@
 
 import random
 
-from magenta.contrib import training as contrib_training
-from magenta.models.sketch_rnn import rnn
+import contrib as contrib_training
+import rnn
 import numpy as np
 import tensorflow.compat.v1 as tf
 
@@ -30,12 +30,15 @@ def copy_hparams(hparams):
 def get_default_hparams():
   """Return default HParams for sketch-rnn."""
   hparams = contrib_training.HParams(
-      data_set=['aaron_sheep.npz'],  # Our dataset.
+      data_set=['cat.npz'],  # Our dataset.
+      num_classes=5,          # 你选多少类就填多少
+      class_embed_dim=32,      # 16/32/64 常用
+      cond_on_class=True,      # 开关，方便做消融
       num_steps=10000000,  # Total number of steps of training. Keep large.
       save_every=500,  # Number of batches per checkpoint creation.
       max_seq_len=250,  # Not used. Will be changed by model. [Eliminate?]
       dec_rnn_size=512,  # Size of decoder.
-      dec_model='lstm',  # Decoder: lstm, layer_norm or hyper.
+      dec_model='hyper',  # Decoder: lstm, layer_norm or hyper.
       enc_rnn_size=256,  # Size of encoder.
       enc_model='lstm',  # Encoder: lstm, layer_norm or hyper.
       z_size=128,  # Size of latent vector z. Recommend 32, 64 or 128.
@@ -189,6 +192,27 @@ class Model(object):
     self.input_data = tf.placeholder(
         dtype=tf.float32,
         shape=[self.hps.batch_size, self.hps.max_seq_len + 1, 5])
+    
+    # class id: [batch]
+    self.class_id = tf.placeholder(dtype=tf.int32, shape=[self.hps.batch_size], name='class_id')
+
+    if getattr(self.hps, 'cond_on_class', False):
+      with tf.variable_scope('class_cond'):
+        # [num_classes, class_embed_dim]
+        self.class_embed_table = tf.get_variable(
+            'class_embed_table',
+            shape=[self.hps.num_classes, self.hps.class_embed_dim],
+            initializer=tf.random_normal_initializer(stddev=0.1)
+        )
+        # [batch, class_embed_dim]
+        class_emb = tf.nn.embedding_lookup(self.class_embed_table, self.class_id)
+
+        # 为了拼到每个 time step：扩展成 [batch, max_seq_len, class_embed_dim]
+        class_emb = tf.reshape(class_emb, [self.hps.batch_size, 1, self.hps.class_embed_dim])
+        class_emb_tile = tf.tile(class_emb, [1, self.hps.max_seq_len, 1])
+    else:
+      class_emb_tile = None
+
 
     # The target/expected vectors of strokes
     self.output_x = self.input_data[:, 1:self.hps.max_seq_len + 1, :]
@@ -210,23 +234,60 @@ class Model(object):
       self.kl_cost = tf.maximum(self.kl_cost, self.hps.kl_tolerance)
       pre_tile_y = tf.reshape(self.batch_z,
                               [self.hps.batch_size, 1, self.hps.z_size])
-      overlay_x = tf.tile(pre_tile_y, [1, self.hps.max_seq_len, 1])
-      actual_input_x = tf.concat([self.input_x, overlay_x], 2)
+      overlay_x = tf.tile(pre_tile_y, [1, self.hps.max_seq_len, 1])   # [B,T,z]
+      actual_input_x = tf.concat([self.input_x, overlay_x], 2)        # [B,T,5+z]
+
+      if class_emb_tile is not None:
+        actual_input_x = tf.concat([actual_input_x, class_emb_tile], 2)  # [B,T,5+z+ce]
+
+      # self.initial_state = tf.nn.tanh(
+      #     rnn.super_linear(
+      #         self.batch_z,
+      #         cell.state_size,
+      #         init_w='gaussian',
+      #         weight_start=0.001,
+      #         input_size=self.hps.z_size))
+      init_cond = self.batch_z  # [B,z]
+      if getattr(self.hps, 'cond_on_class', False):
+        # [B, class_embed_dim]
+        class_emb0 = tf.nn.embedding_lookup(self.class_embed_table, self.class_id)
+        init_cond = tf.concat([init_cond, class_emb0], axis=1)  # [B, z+ce]
+
       self.initial_state = tf.nn.tanh(
           rnn.super_linear(
-              self.batch_z,
+              init_cond,
               cell.state_size,
               init_w='gaussian',
               weight_start=0.001,
-              input_size=self.hps.z_size))
+              input_size=init_cond.get_shape().as_list()[1]  # z+ce
+          )
+      )
+
     else:  # unconditional, decoder-only generation
       self.batch_z = tf.zeros(
           (self.hps.batch_size, self.hps.z_size), dtype=tf.float32)
       self.kl_cost = tf.zeros([], dtype=tf.float32)
       actual_input_x = self.input_x
-      self.initial_state = cell.zero_state(
-          batch_size=hps.batch_size, dtype=tf.float32)
+      # if class_emb_tile is not None:
+      #   actual_input_x = tf.concat([actual_input_x, class_emb_tile], 2)
 
+      # self.initial_state = cell.zero_state(
+      #     batch_size=hps.batch_size, dtype=tf.float32)
+      if class_emb_tile is not None:
+        actual_input_x = tf.concat([actual_input_x, class_emb_tile], 2)
+
+        # 让 initial_state 也带类别（推荐）
+        class_emb0 = tf.nn.embedding_lookup(self.class_embed_table, self.class_id)
+        self.initial_state = tf.nn.tanh(
+          rnn.super_linear(
+            class_emb0, cell.state_size,
+            init_w='gaussian', weight_start=0.001,
+            input_size=self.hps.class_embed_dim
+          )
+        )
+      else:
+        self.initial_state = cell.zero_state(batch_size=hps.batch_size, dtype=tf.float32)
+      
     self.num_mixture = hps.num_mixture
 
     # TODO(deck): Better understand this comment.
@@ -358,7 +419,7 @@ class Model(object):
 
 
 def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
-           z=None):
+           z=None, class_id=None):
   """Samples a sequence from a pre-trained model."""
 
   def adjust_temp(pi_pdf, temp):
@@ -396,30 +457,49 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
   if z is None:
     z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
 
+  # if not model.hps.conditional:
+  #   prev_state = sess.run(model.initial_state)
+  # else:
+  #   prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
+  if class_id is None:
+    class_id = 0  # 默认类别
+  class_id_batch = np.array([class_id], dtype=np.int32)  # shape [1]
+
   if not model.hps.conditional:
-    prev_state = sess.run(model.initial_state)
+    prev_state = sess.run(model.initial_state, feed_dict={
+        model.class_id: class_id_batch
+    })
   else:
-    prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
+    prev_state = sess.run(model.initial_state, feed_dict={
+        model.batch_z: z,
+        model.class_id: class_id_batch
+    })
 
   strokes = np.zeros((seq_len, 5), dtype=np.float32)
   mixture_params = []
 
   greedy = greedy_mode
   temp = temperature
+  # if class_id is None:
+  #   class_id = 0  # 默认类别
+  # class_id_batch = [class_id]  # 注意：这里 batch_size=1 的采样示例
+
 
   for i in range(seq_len):
     if not model.hps.conditional:
       feed = {
           model.input_x: prev_x,
           model.sequence_lengths: [1],
-          model.initial_state: prev_state
+          model.initial_state: prev_state,
+          model.class_id: class_id_batch
       }
     else:
       feed = {
           model.input_x: prev_x,
           model.sequence_lengths: [1],
           model.initial_state: prev_state,
-          model.batch_z: z
+          model.batch_z: z,
+          model.class_id: class_id_batch
       }
 
     params = sess.run([

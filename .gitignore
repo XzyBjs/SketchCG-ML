@@ -6,3 +6,11 @@ ckpts-huge
 *.pth
 *.txt
 *.pytorch
+*.npz
+*.gz
+*.arrow
+*.bin
+*.cache
+ResNet/
+*.ipynb_checkpoints
+*logs*

@@ -1,0 +1,16 @@
+QuickDraw414k
+log
+ckpts-huge
+*__pycache__*
+*.pyc
+*.pth
+*.txt
+*.pytorch
+*.npz
+*.gz
+*.arrow
+*.bin
+*.cache
+ResNet/
+*.ipynb_checkpoints
+*logs*

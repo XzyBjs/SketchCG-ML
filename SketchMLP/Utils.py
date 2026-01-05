@@ -11,6 +11,7 @@ import torch
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+import os
 
 
 # cv2.setNumThreads(0)
@@ -88,44 +89,64 @@ def draw_three(tsketch, random_color=False, img_size=hp.img_size, stroke_flag=1)
     return Image.fromarray(cv2.resize(canvas, (img_size, img_size)))
 
 
-def save_checkpoint(net=None, optimizer=None, epoch=None, train_losses=None, train_acc=None, val_loss=None,
+def save_checkpoint(net=None, optimizer=None, scheduler=None,
+                    epoch=None, iter=None,
+                    train_losses=None, train_acc=None, val_loss=None,
                     val_acc=None, check_loss=None, savepath=None, m_name=None, GPUdevices=1):
-    if GPUdevices > 1:
-        net_weights = net.module.state_dict()
-    else:
-        net_weights = net.state_dict()
-    save_json = {
+    """
+    每一轮都独立保存，不删除、不保留 best，仅追加 scheduler & iter
+    """
+    os.makedirs(savepath, exist_ok=True)
+    net_weights = net.module.state_dict() if GPUdevices > 1 else net.state_dict()
+
+    state = {
         'net_state_dict': net_weights,
         'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),  # 新增
         'epoch': epoch,
+        'iter': iter,                                    # 新增
         'train_losses': train_losses,
         'train_acc': train_acc,
         'val_loss': val_loss,
         'val_acc': val_acc
     }
-    if check_loss > val_loss:
-        savepath = savepath + '/{}_best_params.pkl'.format(m_name)
-        check_loss = val_loss
-    else:
-        savepath = savepath + '/{}_epoch_{}.pkl'.format(m_name, epoch)
-    torch.save(save_json, savepath)
-    print("checkpoint of {}th epoch saved at {}".format(epoch, savepath))
 
-    return check_loss
+    # 仍按原规则：每 epoch 一个文件，不删
+    save_file = os.path.join(savepath, f'{m_name}_epoch_{epoch}.pkl')
+    torch.save(state, save_file)
+    print(f"[save] epoch={epoch}, iter={iter} -> {save_file}")
+
+    # 原接口：返回当前 val_loss（外部若想做 best 比较仍可继续用）
+    return val_loss
 
 
-def load_checkpoint(model=None, optimizer=None, checkpoint_path=None, losses_flag=None):
-    checkpoint = torch.load(checkpoint_path)
+def load_checkpoint(model=None, optimizer=None, scheduler=None,
+                    checkpoint_path=None, losses_flag=None):
+    """
+    加载 checkpoint，支持恢复 scheduler 和 iter（兼容旧格式）
+    """
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
 
+    # 网络权重
     model.load_state_dict(checkpoint['net_state_dict'])
+
+    # 优化器
     if optimizer:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # 学习率调度器（兼容旧 checkpoint 无此字段）
+    if scheduler:
+        scheduler.load_state_dict(
+            checkpoint.get('scheduler_state_dict', scheduler.state_dict())
+        )
+
     start_epoch = checkpoint['epoch']
-    if not losses_flag:
-        return model, optimizer, start_epoch
-    else:
+    start_iter  = checkpoint.get('iter', 0)          # 旧 checkpoint 默认 0
+
+    if losses_flag:
         losses = checkpoint['train_losses']
-        return model, optimizer, start_epoch, losses
+        return model, optimizer, start_epoch, start_iter, losses
+    return start_epoch, start_iter
 
 
 def off2abs(tvector, img_size=256):

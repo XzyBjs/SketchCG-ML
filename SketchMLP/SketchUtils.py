@@ -166,7 +166,7 @@ class SketchUtil(object):
         prob = random.uniform(0, 1)
         if prob > 0.5:
             points_copy = np.copy(points)
-            points_copy[:, 0] = (1.0 - points_copy[:, 0])
+            points_copy[:, 0] = 1.0 - points_copy[:, 0]
             return points_copy
         else:
             return points

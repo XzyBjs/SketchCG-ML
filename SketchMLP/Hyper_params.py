@@ -14,7 +14,7 @@ class HParams:
 
         self.mode = 'Train'
         self.model_save = 'ckpts-huge'
-        self.model_name = 'MoE'
+        self.model_name = '414k_Tiny_MoE_Deeper'
         self.load_model = False
         self.log = 'log'     
 
@@ -26,11 +26,11 @@ class HParams:
 
         self.net_struct =[10, 2, 2, 2, 2]
         self.img_size = 224
-        self.drop_rate = 0.1
+        self.drop_rate = 0.2
         self.patch_size = 16
         self.ps = [16,8,4,2,1]
-        self.d_ffn = 334*4
-        self.d_model =334
+        self.d_ffn = 128*4
+        self.d_model =128
         self.seq_len = 100 #QuickDraw 350, TU_Berlin 448, QuickDraw414k 100
         self.num_patches = (self.img_size // self.patch_size) * (self.img_size // self.patch_size)
         self.pos_enc= False
@@ -42,21 +42,22 @@ class HParams:
         self.seq_weight = 0.8
         self.img_weight = 0.8
         self.cv_weight = 0.0
+        self.temperature = 1
 
-        self.batchsize = 384
-        self.learning_rate = 0.0004
+        self.batchsize = 80
+        self.learning_rate = 0.0002
         self.schedule_step = 1
         self.lr_gamma = 0.1
         self.lr_schedule = None
         self.lr_min = 1e-6
-        self.nThreads = 4
-        self.epochs = 16
+        self.nThreads = 0
+        self.epochs = 20
         self.gpus = [0]
-        self.warmup_step = 4e3
+        self.warmup_step = 4000
 
         self.save_epoch_freq = 1
         self.save_step_freq = 200
         self.valid_epoch_freq = 1
-        self.start_epoch = 0
-        self.model_path = './ckpts/MoE_epoch_'+str(self.start_epoch)+'.pkl'
+        self.start_epoch = 16
+        self.model_path = './ckpts-huge/414k_Tiny_MoE_Deeper_epoch_'+str(self.start_epoch)+'.pkl'
 hp = HParams()

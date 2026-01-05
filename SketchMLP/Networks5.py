@@ -247,7 +247,8 @@ class net(nn.Module):
         img_ans = self.img_classifier(img_emb)
         seq_ans = self.seq_classifier(seq_emb)
 
-        expert = self.expert(torch.cat([img_emb,seq_emb],dim=1))
+        expert_logit = self.expert(torch.cat([img_emb, seq_emb], dim=1))
+        expert = F.softmax(expert_logit / hp.temperature, dim=-1)
         img_jdg = expert[:,0].unsqueeze(1).repeat(1,hp.categories)
         seq_jdg = expert[:,1].unsqueeze(1).repeat(1,hp.categories)
         out = img_jdg*img_ans + seq_jdg*seq_ans

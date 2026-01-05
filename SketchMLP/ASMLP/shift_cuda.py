@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 from collections import namedtuple
-# import cupy  # 注释掉，使用纯 PyTorch 实现
+import cupy
 from string import Template
 import math
 
@@ -20,12 +20,11 @@ def Dtype(t):
         return 'double'
 
 
-# 使用 cupy 的 CUDA 内核编译（已注释，改用纯 PyTorch 实现）
-# @cupy._util.memoize(for_each_device=True)
-# def load_kernel(kernel_name, code, **kwargs):
-#     code = Template(code).substitute(**kwargs)
-#     kernel_code = cupy.cuda.compile_with_cache(code)
-#     return kernel_code.get_function(kernel_name)
+@cupy._util.memoize(for_each_device=True)
+def load_kernel(kernel_name, code, **kwargs):
+    code = Template(code).substitute(**kwargs)
+    kernel_code = cupy.cuda.compile_with_cache(code)
+    return kernel_code.get_function(kernel_name)
 
 
 CUDA_NUM_THREADS = 1024
@@ -194,8 +193,7 @@ class Shift(nn.Module):
         if self.kernel_size == 1:
             return x
 
-        # 使用纯 PyTorch 实现，不需要 cupy
-        out = torch_shift(x, self.kernel_size, self.dim)
+        out = _shift_cuda(x, self.kernel_size, self.dim)
         return out
 
 

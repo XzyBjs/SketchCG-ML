@@ -21,21 +21,21 @@ class Dataset_Quickdraw(data.Dataset):
         self.mode = mode
 
         if self.mode == 'Train':
-            self.TrainData_ENV = lmdb.open('./train_QuickDraw', max_readers=4,
+            self.TrainData_ENV = lmdb.open('./Data/train_QuickDraw', max_readers=4,
                                            readonly=True, lock=False, readahead=False, meminit=False)
         elif self.mode == 'Test':
-            self.TestData_ENV = lmdb.open('./test_QuickDraw', max_readers=4,
+            self.TestData_ENV = lmdb.open('./Data/test_QuickDraw', max_readers=4,
                                           readonly=True, lock=False, readahead=False, meminit=False)
 
         elif self.mode == 'Valid':
-            self.ValidData_ENV = lmdb.open('./valid_QuickDraw', max_readers=4,
+            self.ValidData_ENV = lmdb.open('./Data/valid_QuickDraw', max_readers=4,
                                            readonly=True, lock=False, readahead=False, meminit=False)
 
-        with open("./train_QuickDraw.pkl", "rb") as handle:
+        with open("./Data/train_QuickDraw.pkl", "rb") as handle:
             self.Train_keys = pickle.load(handle)
-        with open("./test_QuickDraw.pkl", "rb") as handle:
+        with open("./Data/test_QuickDraw.pkl", "rb") as handle:
             self.Test_keys = pickle.load(handle)
-        with open("./valid_QuickDraw.pkl", "rb") as handle:
+        with open("./Data/valid_QuickDraw.pkl", "rb") as handle:
             self.Valid_keys = pickle.load(handle)
 
         print('Total Training Sample {}'.format(len(self.Train_keys)))
@@ -126,7 +126,7 @@ class Dataset_Quickdraw(data.Dataset):
 
 class Dataset_TUBerlin(data.Dataset):
     def __init__(self, mode, drop_strokes=True):
-        self.pkl_file = 'TUBerlin.pkl'
+        self.pkl_file = 'Data/TUBerlin.pkl'
         self.mode = mode
         self.drop_strokes = drop_strokes
 
@@ -233,17 +233,17 @@ class Quickdraw414k(data.Dataset):
     def __init__(self, mode='Train'):
         self.mode = mode
         if mode == 'Train':
-            sketch_list = "../QuickDraw414k/picture_files/tiny_train_set.txt"
-            path_root1 = '../QuickDraw414k/picture_files/train'
-            path_root2 = '../QuickDraw414k/coordinate_files/train'
+            sketch_list = "Dataset/picture_files/tiny_train_set.txt"
+            path_root1 = 'Dataset/picture_files/train'
+            path_root2 = 'Dataset/coordinate_files/train'
         elif mode == 'Test':
-            sketch_list = "../QuickDraw414k/picture_files/tiny_test_set.txt"
-            path_root1 = '../QuickDraw414k/picture_files/test'
-            path_root2 = '../QuickDraw414k/coordinate_files/test'
+            sketch_list = "Dataset/picture_files/tiny_test_set.txt"
+            path_root1 = 'Dataset/picture_files/test'
+            path_root2 = 'Dataset/coordinate_files/test'
         elif mode == 'Valid':
-            sketch_list = "../QuickDraw414k/picture_files/tiny_val_set.txt"
-            path_root1 = '../QuickDraw414k/picture_files/val'
-            path_root2 = '../QuickDraw414k/coordinate_files/val'
+            sketch_list = "Dataset/picture_files/tiny_val_set.txt"
+            path_root1 = 'Dataset/picture_files/val'
+            path_root2 = 'Dataset/coordinate_files/val'
 
         with open(sketch_list) as sketch_url_file:
             sketch_url_list = sketch_url_file.readlines()
@@ -301,19 +301,15 @@ class Quickdraw414k(data.Dataset):
 
             img = draw_three(seq, stroke_flag=0)
             seq[:index_neg, 0:2] = seq[:index_neg, 0:2] / 256
-        img_raw = Image.open(sketch_url, 'r')
 
 
         if self.mode == 'Train':
             sketch_img = self.train_transform(img)
-            sketch_img_raw = self.train_transform(img_raw)
         elif self.mode == 'Test':
             sketch_img = self.test_transform(img)
-            sketch_img_raw = self.test_transform(img_raw)
         elif self.mode == 'Valid':
             sketch_img = self.valid_transform(img)
-            sketch_img_raw = self.valid_transform(img_raw)
-        sample = {'sketch_img': sketch_img, 'sketch_points': seq, 'sketch_img_raw': sketch_img_raw,
+        sample = {'sketch_img': sketch_img, 'sketch_points': seq,
                   'sketch_label': label, 'seq_len': 100}
         return sample
 
